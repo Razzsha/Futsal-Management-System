@@ -1,4 +1,6 @@
+using DAO.DAO;
 using DAO.Data;
+using DAO.IDAO;
 using Futsal_Management.IService;
 using Futsal_Management.Service;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -35,7 +37,14 @@ builder.Services.AddSwaggerGen(options =>
         });
 });
 
-// Services
+//DAO Services
+builder.Services.AddScoped<IArenaDao, ArenaDao>();
+builder.Services.AddScoped<IAuthDao, AuthDao>();
+builder.Services.AddScoped<IBookingInfoDao, BookingInfoDao>();
+builder.Services.AddScoped<IUserDao, UserDao>();
+builder.Services.AddScoped<IUserGroupDao, UserGroupDao>();
+
+// BAL Services
 builder.Services.AddScoped<IUserGroupService, UserGroupService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IBookingInfoService, BookingInfoService>();

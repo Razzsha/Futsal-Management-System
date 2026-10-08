@@ -1,21 +1,20 @@
-﻿using DAO.Data;
-using Futsal_Management.Domain.ViewModel;
+﻿using DAO.IDAO;
 using Futsal_Management.Domain.GenericResponse;
-using Futsal_Management.IService;
 using Futsal_Management.Domain.Model;
+using Futsal_Management.Domain.ViewModel;
+using Futsal_Management.IService;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.EntityFrameworkCore;
 
-namespace Futsal_Management.Service 
+namespace Futsal_Management.Service
 {
     public class UserService : IUserService
     {
-        private readonly AppDbContext _context;
+        private readonly IUserDao _userDao;
         private readonly PasswordHasher<string> _passwordHasher;
 
-        public UserService(AppDbContext context)
+        public UserService(IUserDao userDao)
         {
-            _context = context;
+            _userDao = userDao;
             _passwordHasher = new PasswordHasher<string>();
         }
 
@@ -25,22 +24,33 @@ namespace Futsal_Management.Service
             {
                 if (dto.UserGroupId < 0)
                 {
-                    return ResponseResult<UserDto>.Failure(null, "User group is Required");
+                    return ResponseResult<UserDto>.Failure(
+                        null,
+                        "User group is Required");
                 }
 
-                var existingUser = await _context.Users.AnyAsync(x => x.Email == dto.Email);
+                var existingUser = await _userDao.ExistsByEmailAsync(dto.Email!);
 
                 if (existingUser)
                 {
-                    return ResponseResult<UserDto>.Failure(null, "Email already exist");
+                    return ResponseResult<UserDto>.Failure(
+                        null,
+                        "Email already exist");
                 }
-                var userGroupExists = await _context.UserGroups.AnyAsync(x => x.Id == dto.UserGroupId);
+
+                var userGroupExists =
+                    await _userDao.UserGroupExistsAsync(dto.UserGroupId);
 
                 if (!userGroupExists)
                 {
-                    return ResponseResult<UserDto>.Failure(null, "User group not found");
+                    return ResponseResult<UserDto>.Failure(
+                        null,
+                        "User group not found");
                 }
-                var hashedPassword = _passwordHasher.HashPassword(dto.Email!, dto.Password!);
+
+                var hashedPassword = _passwordHasher.HashPassword(
+                    dto.Email!,
+                    dto.Password!);
 
                 var user = new User
                 {
@@ -49,8 +59,9 @@ namespace Futsal_Management.Service
                     Password = hashedPassword,
                     UserGroupId = dto.UserGroupId
                 };
-                _context.Users.Add(user);
-                await _context.SaveChangesAsync();
+
+                await _userDao.AddAsync(user);
+                await _userDao.SaveChangesAsync();
 
                 var result = new UserDto
                 {
@@ -59,12 +70,16 @@ namespace Futsal_Management.Service
                     Email = user.Email,
                     UserGroupId = user.UserGroupId
                 };
-                return ResponseResult<UserDto>.Success(result, "User created successfully");
-            }
 
+                return ResponseResult<UserDto>.Success(
+                    result,
+                    "User created successfully");
+            }
             catch (Exception ex)
             {
-                return ResponseResult<UserDto>.Failure(null, ex.Message);
+                return ResponseResult<UserDto>.Failure(
+                    null,
+                    ex.Message);
             }
         }
 
@@ -72,45 +87,51 @@ namespace Futsal_Management.Service
         {
             try
             {
-                var user = await _context.Users
-                    .AsNoTracking()
-                    .Where(x => x.Id == id)
-                    .Select(x => new UserDto
-                    {
-                        Id = x.Id,
-                        Name = x.Name,
-                        Email = x.Email,
-                        UserGroupId = x.UserGroupId
-                    }).FirstOrDefaultAsync();
+                var user = await _userDao.GetByIdAsync(id);
 
                 if (user == null)
                 {
-                    return ResponseResult<UserDto>.Failure(null, "User not Found");
+                    return ResponseResult<UserDto>.Failure(
+                        null,
+                        "User not Found");
                 }
-                return ResponseResult<UserDto>.Success(user, "User retrieved sucessfully");
+
+                var result = new UserDto
+                {
+                    Id = user.Id,
+                    Name = user.Name,
+                    Email = user.Email,
+                    UserGroupId = user.UserGroupId
+                };
+
+                return ResponseResult<UserDto>.Success(
+                    result,
+                    "User retrieved successfully");
             }
             catch (Exception ex)
             {
-                return ResponseResult<UserDto>.Failure(null, ex.Message);
+                return ResponseResult<UserDto>.Failure(
+                    null,
+                    ex.Message);
             }
         }
-         public async Task<ResponseResult<List<UserDto>>> GetUsers()
+
+        public async Task<ResponseResult<List<UserDto>>> GetUsers()
         {
             try
             {
-                var users = await _context.Users
-                    .AsNoTracking()
-                    .Select(x => new UserDto
-                    {
-                        Id = x.Id,
-                        Name = x.Name,
-                        Email = x.Email,
-                        UserGroupId = x.UserGroupId
-                    })
-                    .ToListAsync();
+                var users = await _userDao.GetAllAsync();
+
+                var result = users.Select(x => new UserDto
+                {
+                    Id = x.Id,
+                    Name = x.Name,
+                    Email = x.Email,
+                    UserGroupId = x.UserGroupId
+                }).ToList();
 
                 return ResponseResult<List<UserDto>>.Success(
-                    users,
+                    result,
                     "Users retrieved successfully");
             }
             catch (Exception ex)
@@ -121,34 +142,46 @@ namespace Futsal_Management.Service
             }
         }
 
-        public async Task<ResponseResult<UserDto>> UpdateUser(int id, UserDto dto)
+        public async Task<ResponseResult<UserDto>> UpdateUser(
+            int id,
+            UserDto dto)
         {
             try
             {
-                if(dto.UserGroupId <= 0)
+                if (dto.UserGroupId <= 0)
                 {
-                    return ResponseResult<UserDto>.Failure(null, "User group is required");
+                    return ResponseResult<UserDto>.Failure(
+                        null,
+                        "User group is required");
                 }
-                var user = await _context.Users
-                    .FirstOrDefaultAsync(x => x.Id == id);
-                
-                if(user == null)
+
+                var user = await _userDao.GetByIdAsync(id);
+
+                if (user == null)
                 {
-                    return ResponseResult<UserDto>.Failure(null, "User not found");
+                    return ResponseResult<UserDto>.Failure(
+                        null,
+                        "User not found");
                 }
-                var existingUser = await _context.Users
-                    .AnyAsync(x => x.Email == dto.Email && x.Id != id);
+
+                var existingUser =
+                    await _userDao.ExistsByEmailAsync(dto.Email!, id);
 
                 if (existingUser)
                 {
-                    return ResponseResult<UserDto>.Failure(null, "Email already exist");
+                    return ResponseResult<UserDto>.Failure(
+                        null,
+                        "Email already exist");
                 }
-                var userGroupExists = await _context.UserGroups
-   .AnyAsync(x => x.Id == dto.UserGroupId);
+
+                var userGroupExists =
+                    await _userDao.UserGroupExistsAsync(dto.UserGroupId);
 
                 if (!userGroupExists)
                 {
-                    return ResponseResult<UserDto>.Failure(null, "User group not found");
+                    return ResponseResult<UserDto>.Failure(
+                        null,
+                        "User group not found");
                 }
 
                 user.Name = dto.Name;
@@ -159,9 +192,11 @@ namespace Futsal_Management.Service
                 if (!string.IsNullOrWhiteSpace(dto.Password))
                 {
                     user.Password = _passwordHasher.HashPassword(
-                        dto.Email, dto.Password);
+                        dto.Email!,
+                        dto.Password);
                 }
-                await _context.SaveChangesAsync();
+
+                await _userDao.SaveChangesAsync();
 
                 var result = new UserDto
                 {
@@ -170,11 +205,16 @@ namespace Futsal_Management.Service
                     Email = user.Email,
                     UserGroupId = user.UserGroupId
                 };
-                return ResponseResult<UserDto>.Success(result, "User Upddated sucessfully");
 
-            }catch (Exception ex)
+                return ResponseResult<UserDto>.Success(
+                    result,
+                    "User Updated successfully");
+            }
+            catch (Exception ex)
             {
-                return ResponseResult<UserDto>.Failure(null, ex.Message);
+                return ResponseResult<UserDto>.Failure(
+                    null,
+                    ex.Message);
             }
         }
 
@@ -182,24 +222,28 @@ namespace Futsal_Management.Service
         {
             try
             {
-                var user = await _context.Users
-                    .FirstOrDefaultAsync (x => x.Id == id);
+                var user = await _userDao.GetByIdAsync(id);
 
-                if(user == null)
+                if (user == null)
                 {
-                    return ResponseResult<UserDto>.Failure(null, "User Not Found");
+                    return ResponseResult<UserDto>.Failure(
+                        null,
+                        "User Not Found");
                 }
-                _context.Users .Remove(user);
-                await _context.SaveChangesAsync();
-                return ResponseResult<UserDto>.Success(null, "user Deleted sucessFully");
-            }catch (Exception ex)
+
+                _userDao.Delete(user);
+                await _userDao.SaveChangesAsync();
+
+                return ResponseResult<UserDto>.Success(
+                    null,
+                    "User Deleted successfully");
+            }
+            catch (Exception ex)
             {
-                return ResponseResult<UserDto>.Failure(null , ex.Message);
+                return ResponseResult<UserDto>.Failure(
+                    null,
+                    ex.Message);
             }
         }
-
     }
-
 }
-
-

@@ -1,11 +1,9 @@
-﻿using DAO.Data;
-using Futsal_Management.Domain.Enum;
+﻿using DAO.IDAO;
 using Futsal_Management.Domain.GenericResponse;
 using Futsal_Management.Domain.Model;
 using Futsal_Management.Domain.ViewModel;
 using Futsal_Management.IService;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
@@ -16,25 +14,33 @@ namespace Futsal_Management.Service
 {
     public class AuthService : IAuthService
     {
-        private readonly AppDbContext _context;
+        private readonly IAuthDao _authDao;
         private readonly IConfiguration _configuration;
         private readonly PasswordHasher<string> _passwordHasher;
 
         public AuthService(
-            AppDbContext context,
+            IAuthDao authDao,
             IConfiguration configuration)
         {
-            _context = context;
+            _authDao = authDao;
             _configuration = configuration;
             _passwordHasher = new PasswordHasher<string>();
         }
 
-        public async Task<ResponseResult<LoginResponseDto>> Login(LoginDto loginDto)
+        public async Task<ResponseResult<LoginResponseDto>> Login(
+            LoginDto loginDto)
         {
             try
             {
-                var user = await _context.Users
-                    .FirstOrDefaultAsync(x => x.Email == loginDto.Email);
+                if (loginDto == null)
+                {
+                    return ResponseResult<LoginResponseDto>.Failure(
+                        null,
+                        "Please enter email and password");
+                }
+
+                var user = await _authDao.GetUserByEmailAsync(
+                    loginDto.Email!);
 
                 if (user == null)
                 {
@@ -43,10 +49,11 @@ namespace Futsal_Management.Service
                         "Invalid email or password");
                 }
 
-                var passwordResult = _passwordHasher.VerifyHashedPassword(
-                    user.Email!,
-                    user.Password!,
-                    loginDto.Password!);
+                var passwordResult =
+                    _passwordHasher.VerifyHashedPassword(
+                        user.Email!,
+                        user.Password!,
+                        loginDto.Password!);
 
                 if (passwordResult == PasswordVerificationResult.Failed)
                 {
@@ -55,54 +62,15 @@ namespace Futsal_Management.Service
                         "Invalid email or password");
                 }
 
-                if (user.UserGroupId != 6 && user.UserGroupId != 3)
+                if (user.UserGroupId != 6 &&
+                    user.UserGroupId != 3)
                 {
                     return ResponseResult<LoginResponseDto>.Failure(
                         null,
                         "You are not authorized to login");
                 }
 
-                var claims = new List<Claim>
-        {
-            new Claim(
-                ClaimTypes.NameIdentifier,
-                user.Id.ToString()),
-
-            new Claim(
-                ClaimTypes.Name,
-                user.Name ?? string.Empty),
-
-            new Claim(
-                ClaimTypes.Email,
-                user.Email ?? string.Empty),
-
-            new Claim(
-                "UserGroupId",
-                user.UserGroupId.ToString()),
-             
-            new Claim(
-                ClaimTypes.Role,
-                user.UserGroupId.ToString())
-        };
-
-                var key = new SymmetricSecurityKey(
-                    Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]!));
-
-                var credentials = new SigningCredentials(
-                    key,
-                    SecurityAlgorithms.HmacSha256);
-
-                var token = new JwtSecurityToken(
-                    issuer: _configuration["Jwt:Issuer"],
-                    audience: _configuration["Jwt:Audience"],
-                    claims: claims,
-                    expires: DateTime.UtcNow.AddMinutes(
-                        Convert.ToDouble(
-                            _configuration["Jwt:ExpiryMinutes"])),
-                    signingCredentials: credentials);
-
-                var tokenString = new JwtSecurityTokenHandler()
-                    .WriteToken(token);
+                var token = GenerateToken(user);
 
                 var response = new LoginResponseDto
                 {
@@ -110,7 +78,7 @@ namespace Futsal_Management.Service
                     Name = user.Name,
                     Email = user.Email,
                     UserGroupId = user.UserGroupId,
-                    Token = tokenString
+                    Token = token
                 };
 
                 return ResponseResult<LoginResponseDto>.Success(
@@ -133,8 +101,32 @@ namespace Futsal_Management.Service
 
             if (string.IsNullOrWhiteSpace(jwtKey))
             {
-                throw new Exception("JWT Key is not configured");
+                throw new Exception(
+                    "JWT Key is not configured");
             }
+
+            var claims = new List<Claim>
+            {
+                new Claim(
+                    ClaimTypes.NameIdentifier,
+                    user.Id.ToString()),
+
+                new Claim(
+                    ClaimTypes.Name,
+                    user.Name ?? string.Empty),
+
+                new Claim(
+                    ClaimTypes.Email,
+                    user.Email ?? string.Empty),
+
+                new Claim(
+                    "UserGroupId",
+                    user.UserGroupId.ToString()),
+
+                new Claim(
+                    ClaimTypes.Role,
+                    user.UserGroupId.ToString())
+            };
 
             var key = new SymmetricSecurityKey(
                 Encoding.UTF8.GetBytes(jwtKey));
@@ -142,30 +134,6 @@ namespace Futsal_Management.Service
             var credentials = new SigningCredentials(
                 key,
                 SecurityAlgorithms.HmacSha256);
-            var tokenString = GenerateToken(user);
-
-            var claims = new List<Claim>
-{
-    new Claim(
-        ClaimTypes.NameIdentifier,
-        user.Id.ToString()),
-
-    new Claim(
-        ClaimTypes.Name,
-        user.Name ?? string.Empty),
-
-    new Claim(
-        ClaimTypes.Email,
-        user.Email ?? string.Empty),
-
-    new Claim(
-        "UserGroupId",
-        user.UserGroupId.ToString()),
-
-    new Claim(
-        ClaimTypes.Role,
-        user.UserGroupId.ToString())
-};
 
             var expiryMinutes = Convert.ToDouble(
                 _configuration["Jwt:ExpiryMinutes"] ?? "60");
@@ -174,7 +142,8 @@ namespace Futsal_Management.Service
                 issuer: issuer,
                 audience: audience,
                 claims: claims,
-                expires: DateTime.UtcNow.AddMinutes(expiryMinutes),
+                expires: DateTime.UtcNow.AddMinutes(
+                    expiryMinutes),
                 signingCredentials: credentials
             );
 
