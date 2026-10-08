@@ -1,63 +1,81 @@
-﻿using DAO.Data;
-using Futsal_Management.Domain.ViewModel;
-using Futsal_Management.Domain.Model;
+﻿using DAO.IDAO;
 using Futsal_Management.Domain.GenericResponse;
+using Futsal_Management.Domain.Model;
+using Futsal_Management.Domain.ViewModel;
 using Futsal_Management.IService;
-using Microsoft.EntityFrameworkCore;
 
 namespace Futsal_Management.Service
 {
     public class ArenaService : IArenaService
     {
-        private readonly AppDbContext _context;
+        private readonly IArenaDao _arenaDao;
 
-        public ArenaService(AppDbContext context)
+        public ArenaService(IArenaDao arenaDao)
         {
-            _context = context;
+            _arenaDao = arenaDao;
         }
 
-        public async Task<ResponseResult<ArenaDto>> CreateArena(ArenaDto arenaDto)
+        public async Task<ResponseResult<ArenaDto>> CreateArena(
+            ArenaDto arenaDto)
         {
             try
             {
+                if (arenaDto == null)
+                {
+                    return ResponseResult<ArenaDto>.Failure(
+                        null,
+                        "Please fill all details");
+                }
+
                 var arena = new Arena
                 {
                     Name = arenaDto.Name,
                     Area = arenaDto.Area,
                     Hour = arenaDto.Hour
                 };
-                await _context.Arenas.AddAsync(arena);
-                await _context.SaveChangesAsync();
 
-                arenaDto.Id = arenaDto.Id;
+                await _arenaDao.AddAsync(arena);
+                await _arenaDao.SaveChangesAsync();
 
-                return ResponseResult<ArenaDto>.Success(arenaDto, "Arena Created Successfully");
+                arenaDto.Id = arena.Id;
 
+                return ResponseResult<ArenaDto>.Success(
+                    arenaDto,
+                    "Arena created successfully");
             }
             catch (Exception ex)
             {
-                return ResponseResult<ArenaDto>.Failure(null, ex.Message);
+                return ResponseResult<ArenaDto>.Failure(
+                    null,
+                    ex.Message);
             }
         }
+
         public async Task<ResponseResult<List<ArenaDto>>> GetAllArena()
         {
             try
             {
-                var arenas = await _context.Arenas
-                    .AsNoTracking()
+                var arenas = await _arenaDao.GetAllAsync();
+
+                var result = arenas
                     .Select(x => new ArenaDto
                     {
                         Id = x.Id,
                         Name = x.Name,
                         Area = x.Area,
                         Hour = x.Hour
-                    }).ToListAsync();
+                    })
+                    .ToList();
 
-                return ResponseResult<List<ArenaDto>>.Success(arenas, "Arena retrived successfully");
+                return ResponseResult<List<ArenaDto>>.Success(
+                    result,
+                    "Arena retrieved successfully");
             }
             catch (Exception ex)
             {
-                return ResponseResult<List<ArenaDto>>.Failure(null, ex.Message);
+                return ResponseResult<List<ArenaDto>>.Failure(
+                    null,
+                    ex.Message);
             }
         }
 
@@ -65,55 +83,81 @@ namespace Futsal_Management.Service
         {
             try
             {
-                var arena = await _context.Arenas
-                    .AsNoTracking()
-                    .Where(x => x.Id == id)
-                    .Select(x => new ArenaDto
-                    {
-                        Id = x.Id,
-                        Name = x.Name,
-                        Area = x.Area,
-                        Hour = x.Hour
-                    }).FirstAsync();
+                var arena = await _arenaDao.GetByIdAsync(id);
 
                 if (arena == null)
                 {
-                    return ResponseResult<ArenaDto>.Failure(null, "Arena not found");
+                    return ResponseResult<ArenaDto>.Failure(
+                        null,
+                        "Arena not found");
                 }
-                return ResponseResult<ArenaDto>.Success(arena, "Arena retrived sucessfully");
 
+                var result = new ArenaDto
+                {
+                    Id = arena.Id,
+                    Name = arena.Name,
+                    Area = arena.Area,
+                    Hour = arena.Hour
+                };
+
+                return ResponseResult<ArenaDto>.Success(
+                    result,
+                    "Arena retrieved successfully");
             }
             catch (Exception ex)
             {
-                return ResponseResult<ArenaDto>.Failure(null, ex.Message);
+                return ResponseResult<ArenaDto>.Failure(
+                    null,
+                    ex.Message);
             }
         }
 
-        public async Task<ResponseResult<ArenaDto>> UpdateArena(int id, ArenaDto arenaDto)
+        public async Task<ResponseResult<ArenaDto>> UpdateArena(
+            int id,
+            ArenaDto arenaDto)
         {
             try
             {
-                var arena = await _context.Arenas
-                    .FirstOrDefaultAsync(x => x.Id == id);
+                if (arenaDto == null)
+                {
+                    return ResponseResult<ArenaDto>.Failure(
+                        null,
+                        "Please fill all details");
+                }
+
+                var arena = await _arenaDao.GetByIdAsync(id);
 
                 if (arena == null)
                 {
-                    return ResponseResult<ArenaDto>.Failure(null, "Arena not found");
+                    return ResponseResult<ArenaDto>.Failure(
+                        null,
+                        "Arena not found");
                 }
+
                 arena.Name = arenaDto.Name;
                 arena.Area = arenaDto.Area;
                 arena.Hour = arenaDto.Hour;
+                arena.ModifiedDate = DateTime.UtcNow;
 
-                await _context.SaveChangesAsync();
+                await _arenaDao.SaveChangesAsync();
 
-                arenaDto.Id = arena.Id;
+                var result = new ArenaDto
+                {
+                    Id = arena.Id,
+                    Name = arena.Name,
+                    Area = arena.Area,
+                    Hour = arena.Hour
+                };
 
-                return ResponseResult<ArenaDto>.Success(arenaDto, "Arena Updated successfully");
-
+                return ResponseResult<ArenaDto>.Success(
+                    result,
+                    "Arena updated successfully");
             }
             catch (Exception ex)
             {
-                return ResponseResult<ArenaDto>.Failure(null, ex.Message);
+                return ResponseResult<ArenaDto>.Failure(
+                    null,
+                    ex.Message);
             }
         }
 
@@ -121,8 +165,7 @@ namespace Futsal_Management.Service
         {
             try
             {
-                var arena = await _context.Arenas
-                .FirstOrDefaultAsync(x => x.Id == id);
+                var arena = await _arenaDao.GetByIdAsync(id);
 
                 if (arena == null)
                 {
@@ -131,9 +174,9 @@ namespace Futsal_Management.Service
                         "Arena not found");
                 }
 
-                _context.Arenas.Remove(arena);
+                _arenaDao.Delete(arena);
 
-                await _context.SaveChangesAsync();
+                await _arenaDao.SaveChangesAsync();
 
                 return ResponseResult<bool>.Success(
                     true,
@@ -141,9 +184,10 @@ namespace Futsal_Management.Service
             }
             catch (Exception ex)
             {
-                return ResponseResult<bool>.Failure(false, ex.Message);
+                return ResponseResult<bool>.Failure(
+                    false,
+                    ex.Message);
             }
-
         }
     }
 }
